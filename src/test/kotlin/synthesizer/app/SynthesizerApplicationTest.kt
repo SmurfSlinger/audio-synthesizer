@@ -24,7 +24,7 @@ class SynthesizerApplicationTest {
             songFile,
             """
             1000 4 120
-            sin|A4 0.1
+            sin|A4 4
             """.trimIndent()
         )
 

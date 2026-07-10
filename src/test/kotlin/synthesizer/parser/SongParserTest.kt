@@ -35,7 +35,7 @@ class SongParserTest {
 
     @Test
     fun `parseChannel zero effects`() {
-        val channel = parser.parseChannel("sin|A4 1", 4)
+        val channel = parser.parseChannel("sin|A4 4", 4)
         assertEquals(WaveformType.SINE, channel.getWaveformType())
         assertTrue(channel.getEffects().isEmpty())
         assertEquals(1, channel.getMeasures().size)
@@ -43,14 +43,14 @@ class SongParserTest {
 
     @Test
     fun `parseChannel one effect`() {
-        val channel = parser.parseChannel("""square vol$.8|C4 1""", 4)
+        val channel = parser.parseChannel("""square vol$.8|C4 4""", 4)
         assertEquals(1, channel.getEffects().size)
         assertInstanceOf(VolumeEffectConfig::class.java, channel.getEffects().first())
     }
 
     @Test
     fun `parseChannel multiple effects in order`() {
-        val channel = parser.parseChannel("""sin vol$.8 tanh$5 clip$.7|A4 1""", 4)
+        val channel = parser.parseChannel("""sin vol$.8 tanh$5 clip$.7|A4 4""", 4)
         assertEquals(listOf("vol", "tanh", "clip"), channel.getEffects().map { it.getType() })
     }
 
@@ -79,8 +79,8 @@ class SongParserTest {
             file,
             """
             44100 4 120
-            sin|A4 1
-            square|C4 1
+            sin|A4 4
+            square|C4 4
             """.trimIndent()
         )
         val song = parser.parse(file.toString())
@@ -89,7 +89,7 @@ class SongParserTest {
 
     @Test
     fun `parse multiple measures`() {
-        val channel = parser.parseChannel("saw|A4 1|C5 1", 4)
+        val channel = parser.parseChannel("saw|A4 4|C5 4", 4)
         assertEquals(2, channel.getMeasures().size)
     }
 
@@ -142,5 +142,42 @@ class SongParserTest {
     fun `missing file`(@TempDir tempDir: Path) {
         val missing = tempDir.resolve("missing.txt").toString()
         assertThrows(SongParseException::class.java) { parser.parse(missing) }
+    }
+
+    @Test
+    fun `validateMeasureDuration accepts exact beatsPerMeasure`() {
+        val measure = parser.parseMeasure("A4 4")
+        parser.validateMeasureDuration(measure, 4)
+    }
+
+    @Test
+    fun `validateMeasureDuration accepts fractional durations summing to beatsPerMeasure`() {
+        val measure = parser.parseMeasure("A4 1.5 C5 .5 - 1 F4 1")
+        parser.validateMeasureDuration(measure, 4)
+    }
+
+    @Test
+    fun `validateMeasureDuration rejects too few beats`() {
+        val measure = parser.parseMeasure("A4 1 C5 1")
+        val ex = assertThrows(SongParseException::class.java) {
+            parser.validateMeasureDuration(measure, 4)
+        }
+        assertTrue(ex.message!!.contains("does not match beatsPerMeasure"))
+    }
+
+    @Test
+    fun `validateMeasureDuration rejects too many beats`() {
+        val measure = parser.parseMeasure("A4 3 C5 3")
+        val ex = assertThrows(SongParseException::class.java) {
+            parser.validateMeasureDuration(measure, 4)
+        }
+        assertTrue(ex.message!!.contains("does not match beatsPerMeasure"))
+    }
+
+    @Test
+    fun `parseChannel rejects measure with wrong total duration`() {
+        assertThrows(SongParseException::class.java) {
+            parser.parseChannel("sin|A4 1 C5 1", 4)
+        }
     }
 }
