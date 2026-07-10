@@ -6,7 +6,7 @@ skinparam linetype ortho
 skinparam nodesep 40
 skinparam ranksep 35
 
-title CS 5700 Assignment 2 — Audio Synthesizer (Conceptual Model)\nStrategy + Decorator Patterns
+title CS 5700 Assignment 2 — Audio Synthesizer (Revised Conceptual Model)\nStrategy + Decorator Patterns
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' Enumerations
@@ -20,33 +20,49 @@ enum WaveformType {
 }
 
 ' ─────────────────────────────────────────────────────────────────────────────
+' Error handling
+' ─────────────────────────────────────────────────────────────────────────────
+
+class SongParseException {
+  + SongParseException(message: String)
+  + SongParseException(message: String, cause: Throwable)
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
 ' STRATEGY PATTERN — Waveform generation
 ' ─────────────────────────────────────────────────────────────────────────────
 
 interface WaveformStrategy {
-  + {abstract} generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+  + {abstract} generateSample(phase: Double): Double
 }
 
 class SineWaveStrategy {
   + SineWaveStrategy()
-  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+  + generateSample(phase: Double): Double
 }
 
 class SquareWaveStrategy {
   + SquareWaveStrategy()
-  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+  + generateSample(phase: Double): Double
 }
 
 class SawWaveStrategy {
   + SawWaveStrategy()
-  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+  + generateSample(phase: Double): Double
 }
 
 class WhiteNoiseStrategy {
   - random: Random
   + WhiteNoiseStrategy()
-  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+  + generateSample(phase: Double): Double
 }
+
+note bottom of WaveformStrategy
+  Strategy converts phase → amplitude only.
+  Oscillator owns frequency, sampleRate,
+  and phase advancement.
+  WhiteNoiseStrategy may ignore phase.
+end note
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' DECORATOR PATTERN — Audio effects (Oscillator is concrete component)
@@ -71,36 +87,52 @@ abstract class AudioEffectDecorator {
   - wrappee: AudioSource
   + AudioEffectDecorator(source: AudioSource)
   + renderNote(note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
-  # {abstract} process(samples: DoubleArray): DoubleArray
+  # {abstract} process(samples: DoubleArray, note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
 }
 
 class VolumeDecorator {
   - gain: Double
   + VolumeDecorator(source: AudioSource, config: VolumeEffectConfig)
-  # process(samples: DoubleArray): DoubleArray
+  # process(samples: DoubleArray, note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
 }
 
 class AdsDecorator {
-  - attackSeconds: Double
-  - decaySeconds: Double
+  - attackEndSeconds: Double
+  - decayEndSeconds: Double
   - sustainLevel: Double
-  - releaseSeconds: Double
   + AdsDecorator(source: AudioSource, config: AdsEffectConfig)
-  # process(samples: DoubleArray): DoubleArray
-  - computeEnvelope(sampleIndex: Int, noteLength: Int): Double
+  # process(samples: DoubleArray, note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
+  - computeEnvelope(timeSeconds: Double): Double
 }
 
 class TanhDecorator {
   - drive: Double
   + TanhDecorator(source: AudioSource, config: TanhEffectConfig)
-  # process(samples: DoubleArray): DoubleArray
+  # process(samples: DoubleArray, note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
 }
 
 class ClipDecorator {
   - threshold: Double
   + ClipDecorator(source: AudioSource, config: ClipEffectConfig)
-  # process(samples: DoubleArray): DoubleArray
+  # process(samples: DoubleArray, note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
 }
+
+note right of AudioEffectDecorator
+  **Template method** renderNote():
+  1. wrappee.renderNote(...)
+  2. process(samples, note, sampleRate, tempo)
+
+  **Effect order** (e.g. sin vol$.8 tanh$5 clip$.7):
+  ClipDecorator(
+    TanhDecorator(
+      VolumeDecorator(
+        Oscillator(SineWaveStrategy)
+      )
+    )
+  )
+  Signal: Oscillator → Volume → Tanh → Clip
+  File order = innermost → outermost wrap.
+end note
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' Parsing & domain value objects
@@ -109,11 +141,13 @@ class ClipDecorator {
 class SongParser {
   + SongParser()
   + parse(filePath: String): Song
-  - parseHeader(lines: List<String>): SongHeader
+  - parseHeader(line: String): SongHeader
   - parseChannel(lines: List<String>): ChannelSpec
+  - parseMeasure(segment: String): Measure
   - parseNoteEvent(token: String): NoteEvent
   - parseEffect(token: String): EffectConfig
   - parseWaveform(token: String): WaveformType
+  - validateMeasureDuration(measure: Measure, beatsPerMeasure: Int): void
 }
 
 class Song {
@@ -125,20 +159,28 @@ class Song {
 }
 
 class SongHeader {
-  - tempo: Double
   - sampleRate: Int
-  + SongHeader(tempo: Double, sampleRate: Int)
-  + getTempo(): Double
+  - beatsPerMeasure: Int
+  - tempo: Double
+  + SongHeader(sampleRate: Int, beatsPerMeasure: Int, tempo: Double)
   + getSampleRate(): Int
+  + getBeatsPerMeasure(): Int
+  + getTempo(): Double
 }
 
 class ChannelSpec {
   - waveformType: WaveformType
   - effects: List<EffectConfig>
-  - noteEvents: List<NoteEvent>
-  + ChannelSpec(waveformType: WaveformType, effects: List<EffectConfig>, noteEvents: List<NoteEvent>)
+  - measures: List<Measure>
+  + ChannelSpec(waveformType: WaveformType, effects: List<EffectConfig>, measures: List<Measure>)
   + getWaveformType(): WaveformType
   + getEffects(): List<EffectConfig>
+  + getMeasures(): List<Measure>
+}
+
+class Measure {
+  - noteEvents: List<NoteEvent>
+  + Measure(noteEvents: List<NoteEvent>)
   + getNoteEvents(): List<NoteEvent>
 }
 
@@ -164,16 +206,14 @@ class VolumeEffectConfig {
 }
 
 class AdsEffectConfig {
-  - attackSeconds: Double
-  - decaySeconds: Double
+  - attackEndSeconds: Double
+  - decayEndSeconds: Double
   - sustainLevel: Double
-  - releaseSeconds: Double
-  + AdsEffectConfig(attackSeconds: Double, decaySeconds: Double, sustainLevel: Double, releaseSeconds: Double)
+  + AdsEffectConfig(attackEndSeconds: Double, decayEndSeconds: Double, sustainLevel: Double)
   + getType(): String
-  + getAttackSeconds(): Double
-  + getDecaySeconds(): Double
+  + getAttackEndSeconds(): Double
+  + getDecayEndSeconds(): Double
   + getSustainLevel(): Double
-  + getReleaseSeconds(): Double
 }
 
 class TanhEffectConfig {
@@ -189,6 +229,14 @@ class ClipEffectConfig {
   + getType(): String
   + getThreshold(): Double
 }
+
+note bottom of AdsEffectConfig
+  Syntax: ads$attackEnd$decayEnd$sustain
+  0..attackEnd: ramp 0→1
+  attackEnd..decayEnd: ramp 1→sustain
+  after decayEnd: hold sustain
+  (no release parameter)
+end note
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' Synthesis orchestration
@@ -230,8 +278,17 @@ class SongSynthesizer {
 }
 
 ' ─────────────────────────────────────────────────────────────────────────────
-' Playback (separate from synthesis)
+' Application orchestration & playback
 ' ─────────────────────────────────────────────────────────────────────────────
+
+class SynthesizerApplication {
+  - parser: SongParser
+  - synthesizer: SongSynthesizer
+  - player: AudioPlayer
+  + SynthesizerApplication(parser: SongParser, synthesizer: SongSynthesizer, player: AudioPlayer)
+  + run(filePath: String): Unit
+  - reportError(message: String): Unit
+}
 
 interface AudioPlayer {
   + {abstract} play(samples: DoubleArray, sampleRate: Int): void
@@ -241,6 +298,10 @@ class JavaSoundPlayer {
   + JavaSoundPlayer()
   + play(samples: DoubleArray, sampleRate: Int): void
   - toPcmBytes(samples: DoubleArray): ByteArray
+}
+
+class Main <<entry point>> {
+  + {static} main(args: Array<String>): Unit
 }
 
 ' ─────────────────────────────────────────────────────────────────────────────
@@ -258,21 +319,14 @@ Oscillator o--> WaveformStrategy : -waveformStrategy\n<<Strategy Context>>
 ' Decorator realizations & composition chain
 ' ─────────────────────────────────────────────────────────────────────────────
 
-AudioSource <|.. Oscillator : concrete component
-AudioSource <|.. AudioEffectDecorator : decorator
+AudioSource <|.. Oscillator : <<concrete component>>
+AudioSource <|.. AudioEffectDecorator : <<decorator>>
 
 AudioEffectDecorator o--> AudioSource : -wrappee\n<<wraps>>
 AudioEffectDecorator <|-- VolumeDecorator
 AudioEffectDecorator <|-- AdsDecorator
 AudioEffectDecorator <|-- TanhDecorator
 AudioEffectDecorator <|-- ClipDecorator
-
-note right of AudioEffectDecorator
-  Decorators stack in input-file order.
-  Outermost decorator receives renderNote()
-  from ChannelRenderer; calls propagate inward
-  to Oscillator, then process() outward.
-end note
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' EffectConfig hierarchy
@@ -295,15 +349,20 @@ ClipDecorator ..> ClipEffectConfig : uses
 SongParser ..> Song : creates
 SongParser ..> SongHeader : creates
 SongParser ..> ChannelSpec : creates
+SongParser ..> Measure : creates
 SongParser ..> NoteEvent : creates
 SongParser ..> EffectConfig : creates
 SongParser ..> WaveformType : uses
+SongParser ..> SongParseException : throws
 
 Song *-- SongHeader : -header
 Song *-- ChannelSpec : -channels
-ChannelSpec *-- NoteEvent : -noteEvents
+ChannelSpec *-- Measure : -measures
 ChannelSpec o-- EffectConfig : -effects
 ChannelSpec --> WaveformType : -waveformType
+Measure *-- NoteEvent : -noteEvents
+
+SongParseException --|> Exception
 
 ' ─────────────────────────────────────────────────────────────────────────────
 ' Synthesis dependencies
@@ -317,9 +376,9 @@ AudioPipelineFactory --> PitchConverter : -pitchConverter
 
 Oscillator --> PitchConverter : -pitchConverter
 
-ChannelRenderer ..> ChannelSpec : reads
+ChannelRenderer ..> ChannelSpec : reads measures
 ChannelRenderer ..> AudioSource : renderNote()
-ChannelRenderer ..> SongHeader : tempo / sampleRate
+ChannelRenderer ..> SongHeader : tempo / sampleRate / beatsPerMeasure
 
 SongSynthesizer --> AudioPipelineFactory : -pipelineFactory
 SongSynthesizer --> ChannelRenderer : -channelRenderer
@@ -329,15 +388,28 @@ SongSynthesizer ..> Song : synthesize()
 AudioMixer ..> DoubleArray : mixes
 
 ' ─────────────────────────────────────────────────────────────────────────────
-' Playback
+' Application flow (parse → synthesize → play)
 ' ─────────────────────────────────────────────────────────────────────────────
+
+Main ..> SynthesizerApplication : constructs, run()
+SynthesizerApplication --> SongParser : -parser
+SynthesizerApplication --> SongSynthesizer : -synthesizer
+SynthesizerApplication --> AudioPlayer : -player
+SynthesizerApplication ..> Song : receives from parse
+SynthesizerApplication ..> SongParseException : catches
+SynthesizerApplication ..> AudioPlayer : play()
 
 AudioPlayer <|.. JavaSoundPlayer
 
-note bottom of SongSynthesizer
-  Synthesis produces DoubleArray only.
-  JavaSoundPlayer is optional and injected
-  at application boundary — not used in unit tests.
+note bottom of SynthesizerApplication
+  run(filePath):
+  1. parser.parse(filePath) → Song
+  2. synthesizer.synthesize(song) → DoubleArray
+  3. player.play(samples, song.header.sampleRate)
+
+  Catches SongParseException and expected
+  file I/O errors; reports helpful message.
+  Does not swallow programming errors.
 end note
 
 @enduml
