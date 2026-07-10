@@ -1,0 +1,343 @@
+@startuml CS5700_Audio_Synthesizer
+
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 35
+
+title CS 5700 Assignment 2 — Audio Synthesizer (Conceptual Model)\nStrategy + Decorator Patterns
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Enumerations
+' ─────────────────────────────────────────────────────────────────────────────
+
+enum WaveformType {
+  SINE
+  SQUARE
+  SAW
+  WHITE_NOISE
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' STRATEGY PATTERN — Waveform generation
+' ─────────────────────────────────────────────────────────────────────────────
+
+interface WaveformStrategy {
+  + {abstract} generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+}
+
+class SineWaveStrategy {
+  + SineWaveStrategy()
+  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+}
+
+class SquareWaveStrategy {
+  + SquareWaveStrategy()
+  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+}
+
+class SawWaveStrategy {
+  + SawWaveStrategy()
+  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+}
+
+class WhiteNoiseStrategy {
+  - random: Random
+  + WhiteNoiseStrategy()
+  + generateSample(phase: Double, frequency: Double, sampleRate: Int): Double
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' DECORATOR PATTERN — Audio effects (Oscillator is concrete component)
+' ─────────────────────────────────────────────────────────────────────────────
+
+interface AudioSource {
+  + {abstract} renderNote(note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
+}
+
+class Oscillator {
+  - waveformStrategy: WaveformStrategy
+  - pitchConverter: PitchConverter
+  - phase: Double
+  + Oscillator(strategy: WaveformStrategy, pitchConverter: PitchConverter)
+  + setStrategy(strategy: WaveformStrategy): void
+  + renderNote(note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
+  - advancePhase(frequency: Double, sampleRate: Int): void
+  - generateRawSamples(note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
+}
+
+abstract class AudioEffectDecorator {
+  - wrappee: AudioSource
+  + AudioEffectDecorator(source: AudioSource)
+  + renderNote(note: NoteEvent, sampleRate: Int, tempo: Double): DoubleArray
+  # {abstract} process(samples: DoubleArray): DoubleArray
+}
+
+class VolumeDecorator {
+  - gain: Double
+  + VolumeDecorator(source: AudioSource, config: VolumeEffectConfig)
+  # process(samples: DoubleArray): DoubleArray
+}
+
+class AdsDecorator {
+  - attackSeconds: Double
+  - decaySeconds: Double
+  - sustainLevel: Double
+  - releaseSeconds: Double
+  + AdsDecorator(source: AudioSource, config: AdsEffectConfig)
+  # process(samples: DoubleArray): DoubleArray
+  - computeEnvelope(sampleIndex: Int, noteLength: Int): Double
+}
+
+class TanhDecorator {
+  - drive: Double
+  + TanhDecorator(source: AudioSource, config: TanhEffectConfig)
+  # process(samples: DoubleArray): DoubleArray
+}
+
+class ClipDecorator {
+  - threshold: Double
+  + ClipDecorator(source: AudioSource, config: ClipEffectConfig)
+  # process(samples: DoubleArray): DoubleArray
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Parsing & domain value objects
+' ─────────────────────────────────────────────────────────────────────────────
+
+class SongParser {
+  + SongParser()
+  + parse(filePath: String): Song
+  - parseHeader(lines: List<String>): SongHeader
+  - parseChannel(lines: List<String>): ChannelSpec
+  - parseNoteEvent(token: String): NoteEvent
+  - parseEffect(token: String): EffectConfig
+  - parseWaveform(token: String): WaveformType
+}
+
+class Song {
+  - header: SongHeader
+  - channels: List<ChannelSpec>
+  + Song(header: SongHeader, channels: List<ChannelSpec>)
+  + getHeader(): SongHeader
+  + getChannels(): List<ChannelSpec>
+}
+
+class SongHeader {
+  - tempo: Double
+  - sampleRate: Int
+  + SongHeader(tempo: Double, sampleRate: Int)
+  + getTempo(): Double
+  + getSampleRate(): Int
+}
+
+class ChannelSpec {
+  - waveformType: WaveformType
+  - effects: List<EffectConfig>
+  - noteEvents: List<NoteEvent>
+  + ChannelSpec(waveformType: WaveformType, effects: List<EffectConfig>, noteEvents: List<NoteEvent>)
+  + getWaveformType(): WaveformType
+  + getEffects(): List<EffectConfig>
+  + getNoteEvents(): List<NoteEvent>
+}
+
+class NoteEvent {
+  - pitch: String
+  - durationBeats: Double
+  - isRest: Boolean
+  + NoteEvent(pitch: String, durationBeats: Double, isRest: Boolean)
+  + getPitch(): String
+  + getDurationBeats(): Double
+  + isRest(): Boolean
+}
+
+interface EffectConfig {
+  + {abstract} getType(): String
+}
+
+class VolumeEffectConfig {
+  - gain: Double
+  + VolumeEffectConfig(gain: Double)
+  + getType(): String
+  + getGain(): Double
+}
+
+class AdsEffectConfig {
+  - attackSeconds: Double
+  - decaySeconds: Double
+  - sustainLevel: Double
+  - releaseSeconds: Double
+  + AdsEffectConfig(attackSeconds: Double, decaySeconds: Double, sustainLevel: Double, releaseSeconds: Double)
+  + getType(): String
+  + getAttackSeconds(): Double
+  + getDecaySeconds(): Double
+  + getSustainLevel(): Double
+  + getReleaseSeconds(): Double
+}
+
+class TanhEffectConfig {
+  - drive: Double
+  + TanhEffectConfig(drive: Double)
+  + getType(): String
+  + getDrive(): Double
+}
+
+class ClipEffectConfig {
+  - threshold: Double
+  + ClipEffectConfig(threshold: Double)
+  + getType(): String
+  + getThreshold(): Double
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Synthesis orchestration
+' ─────────────────────────────────────────────────────────────────────────────
+
+class AudioPipelineFactory {
+  - pitchConverter: PitchConverter
+  + AudioPipelineFactory(pitchConverter: PitchConverter)
+  + create(channel: ChannelSpec): AudioSource
+  - createStrategy(waveformType: WaveformType): WaveformStrategy
+  - wrapWithEffect(source: AudioSource, config: EffectConfig): AudioSource
+}
+
+class PitchConverter {
+  + PitchConverter()
+  + toFrequency(pitch: String): Double
+  - noteNameToSemitone(note: String): Int
+}
+
+class ChannelRenderer {
+  + ChannelRenderer()
+  + render(channel: ChannelSpec, pipeline: AudioSource, header: SongHeader): DoubleArray
+  - beatsToSampleCount(durationBeats: Double, tempo: Double, sampleRate: Int): Int
+  - renderSilence(sampleCount: Int): DoubleArray
+}
+
+class AudioMixer {
+  + AudioMixer()
+  + mix(channelBuffers: List<DoubleArray>): DoubleArray
+  - findLongestLength(buffers: List<DoubleArray>): Int
+}
+
+class SongSynthesizer {
+  - pipelineFactory: AudioPipelineFactory
+  - channelRenderer: ChannelRenderer
+  - audioMixer: AudioMixer
+  + SongSynthesizer(pipelineFactory: AudioPipelineFactory, channelRenderer: ChannelRenderer, audioMixer: AudioMixer)
+  + synthesize(song: Song): DoubleArray
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Playback (separate from synthesis)
+' ─────────────────────────────────────────────────────────────────────────────
+
+interface AudioPlayer {
+  + {abstract} play(samples: DoubleArray, sampleRate: Int): void
+}
+
+class JavaSoundPlayer {
+  + JavaSoundPlayer()
+  + play(samples: DoubleArray, sampleRate: Int): void
+  - toPcmBytes(samples: DoubleArray): ByteArray
+}
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Strategy realizations
+' ─────────────────────────────────────────────────────────────────────────────
+
+WaveformStrategy <|.. SineWaveStrategy
+WaveformStrategy <|.. SquareWaveStrategy
+WaveformStrategy <|.. SawWaveStrategy
+WaveformStrategy <|.. WhiteNoiseStrategy
+
+Oscillator o--> WaveformStrategy : -waveformStrategy\n<<Strategy Context>>
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Decorator realizations & composition chain
+' ─────────────────────────────────────────────────────────────────────────────
+
+AudioSource <|.. Oscillator : concrete component
+AudioSource <|.. AudioEffectDecorator : decorator
+
+AudioEffectDecorator o--> AudioSource : -wrappee\n<<wraps>>
+AudioEffectDecorator <|-- VolumeDecorator
+AudioEffectDecorator <|-- AdsDecorator
+AudioEffectDecorator <|-- TanhDecorator
+AudioEffectDecorator <|-- ClipDecorator
+
+note right of AudioEffectDecorator
+  Decorators stack in input-file order.
+  Outermost decorator receives renderNote()
+  from ChannelRenderer; calls propagate inward
+  to Oscillator, then process() outward.
+end note
+
+' ─────────────────────────────────────────────────────────────────────────────
+' EffectConfig hierarchy
+' ─────────────────────────────────────────────────────────────────────────────
+
+EffectConfig <|.. VolumeEffectConfig
+EffectConfig <|.. AdsEffectConfig
+EffectConfig <|.. TanhEffectConfig
+EffectConfig <|.. ClipEffectConfig
+
+VolumeDecorator ..> VolumeEffectConfig : uses
+AdsDecorator ..> AdsEffectConfig : uses
+TanhDecorator ..> TanhEffectConfig : uses
+ClipDecorator ..> ClipEffectConfig : uses
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Parsing & song composition
+' ─────────────────────────────────────────────────────────────────────────────
+
+SongParser ..> Song : creates
+SongParser ..> SongHeader : creates
+SongParser ..> ChannelSpec : creates
+SongParser ..> NoteEvent : creates
+SongParser ..> EffectConfig : creates
+SongParser ..> WaveformType : uses
+
+Song *-- SongHeader : -header
+Song *-- ChannelSpec : -channels
+ChannelSpec *-- NoteEvent : -noteEvents
+ChannelSpec o-- EffectConfig : -effects
+ChannelSpec --> WaveformType : -waveformType
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Synthesis dependencies
+' ─────────────────────────────────────────────────────────────────────────────
+
+AudioPipelineFactory ..> ChannelSpec : reads
+AudioPipelineFactory ..> WaveformStrategy : creates
+AudioPipelineFactory ..> Oscillator : creates
+AudioPipelineFactory ..> AudioSource : returns
+AudioPipelineFactory --> PitchConverter : -pitchConverter
+
+Oscillator --> PitchConverter : -pitchConverter
+
+ChannelRenderer ..> ChannelSpec : reads
+ChannelRenderer ..> AudioSource : renderNote()
+ChannelRenderer ..> SongHeader : tempo / sampleRate
+
+SongSynthesizer --> AudioPipelineFactory : -pipelineFactory
+SongSynthesizer --> ChannelRenderer : -channelRenderer
+SongSynthesizer --> AudioMixer : -audioMixer
+SongSynthesizer ..> Song : synthesize()
+
+AudioMixer ..> DoubleArray : mixes
+
+' ─────────────────────────────────────────────────────────────────────────────
+' Playback
+' ─────────────────────────────────────────────────────────────────────────────
+
+AudioPlayer <|.. JavaSoundPlayer
+
+note bottom of SongSynthesizer
+  Synthesis produces DoubleArray only.
+  JavaSoundPlayer is optional and injected
+  at application boundary — not used in unit tests.
+end note
+
+@enduml
