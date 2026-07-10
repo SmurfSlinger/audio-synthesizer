@@ -190,8 +190,14 @@ class SongParser {
         }
     }
 
-    internal fun validateMeasureDuration(@Suppress("UNUSED_PARAMETER") measure: Measure, @Suppress("UNUSED_PARAMETER") beatsPerMeasure: Int) {
-        // beatsPerMeasure is preserved for future validation; not enforced as a hard requirement.
+    internal fun validateMeasureDuration(measure: Measure, beatsPerMeasure: Int) {
+        val totalDuration = measure.getNoteEvents().sumOf { it.getDurationBeats() }
+        val expected = beatsPerMeasure.toDouble()
+        if (kotlin.math.abs(totalDuration - expected) > 1e-9) {
+            throw SongParseException(
+                "Measure duration $totalDuration does not match beatsPerMeasure $beatsPerMeasure"
+            )
+        }
     }
 
     private fun tokenize(value: String): List<String> =
