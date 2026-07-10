@@ -48,6 +48,21 @@ sampleRate beatsPerMeasure tempo
 
 Public getters: `getSampleRate()`, `getBeatsPerMeasure()`, `getTempo()`.
 
+## SongParser
+
+Method signatures align with the file format:
+
+| Method | Role |
+|--------|------|
+| `parse(filePath: String): Song` | Read file; parse header line, then one channel line per remaining line |
+| `parseHeader(line: String): SongHeader` | Parse `sampleRate beatsPerMeasure tempo` |
+| `parseChannel(line: String, beatsPerMeasure: Int): ChannelSpec` | Parse one channel line: waveform token, effect tokens, then `\|`-delimited measure segments |
+| `parseMeasure(segment: String): Measure` | Parse one measure segment by walking **note token / duration token** pairs |
+| `parseNoteEvent(noteToken: String, durationToken: String): NoteEvent` | Build one note or rest from its two tokens |
+| `parseEffect(token: String): EffectConfig` | Parse `vol$…`, `ads$…`, `tanh$…`, `clip$…` |
+| `parseWaveform(token: String): WaveformType` | Map `sin`, `square`, `saw`, `whitenoise` to enum values |
+| `validateMeasureDuration(measure: Measure, beatsPerMeasure: Int): void` | Optional validation against header |
+
 ## Measures and Channels
 
 The input format explicitly organizes note sequences into **measures**. After a channel’s waveform and effect settings, each `|`-delimited segment is one measure.
@@ -61,14 +76,23 @@ The input format explicitly organizes note sequences into **measures**. After a 
 - `effects: List<EffectConfig>` — **preserves input-file order**
 - `measures: List<Measure>` — **preserves measure order**
 
-`SongParser.parseMeasure(segment)` produces a `Measure` per `|` segment. `beatsPerMeasure` from `SongHeader` may be used to validate that each measure’s total duration matches the expected beat count.
+`SongParser.parseChannel(line, beatsPerMeasure)` parses one channel line (waveform, effects, and `|`-delimited measures). `SongParser.parseMeasure(segment)` produces a `Measure` per `|` segment by consuming **note token / duration token pairs** and calling `parseNoteEvent(noteToken, durationToken)` for each pair. `beatsPerMeasure` from `SongHeader` is passed into channel parsing and may be used to validate that each measure’s total duration matches the expected beat count.
 
 ### NoteEvent
-Pitch in scientific notation (e.g. `A4`) or rest, plus `durationBeats: Double`.
+Defined by two adjacent tokens in the file: a **note token** (pitch in scientific notation, e.g. `A4`, or a rest marker) and a **duration token** (length in beats). `SongParser.parseNoteEvent(noteToken, durationToken)` constructs the `NoteEvent`.
 
 ## WaveformType
 
-Enumeration: `SINE`, `SQUARE`, `SAW`, `WHITE_NOISE` — maps input keywords (`sin`, `sqr`, `saw`, `noise`) to runtime strategy selection.
+Enumeration: `SINE`, `SQUARE`, `SAW`, `WHITE_NOISE`.
+
+`SongParser.parseWaveform(token)` recognizes the exact assignment keywords:
+
+| Input token | `WaveformType` |
+|-------------|----------------|
+| `sin` | `SINE` |
+| `square` | `SQUARE` |
+| `saw` | `SAW` |
+| `whitenoise` | `WHITE_NOISE` |
 
 ## Effect Configuration
 

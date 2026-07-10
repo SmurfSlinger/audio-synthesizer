@@ -142,13 +142,27 @@ class SongParser {
   + SongParser()
   + parse(filePath: String): Song
   - parseHeader(line: String): SongHeader
-  - parseChannel(lines: List<String>): ChannelSpec
+  - parseChannel(line: String, beatsPerMeasure: Int): ChannelSpec
   - parseMeasure(segment: String): Measure
-  - parseNoteEvent(token: String): NoteEvent
+  - parseNoteEvent(noteToken: String, durationToken: String): NoteEvent
   - parseEffect(token: String): EffectConfig
   - parseWaveform(token: String): WaveformType
   - validateMeasureDuration(measure: Measure, beatsPerMeasure: Int): void
 }
+
+note right of SongParser
+  **parseWaveform** tokens:
+  sin → SINE
+  square → SQUARE
+  saw → SAW
+  whitenoise → WHITE_NOISE
+
+  **parseChannel**: one line per channel;
+  passes beatsPerMeasure for validation.
+
+  **parseMeasure**: consumes note/duration
+  token pairs; calls parseNoteEvent for each.
+end note
 
 class Song {
   - header: SongHeader
